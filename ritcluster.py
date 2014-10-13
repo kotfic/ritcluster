@@ -3,6 +3,7 @@ import os
 import re
 import uuid
 import json
+import time
 import getpass
 import argparse
 
@@ -21,7 +22,7 @@ sbatch_script = \
 
 echo "" > {pwd}/engines.out
 
-srun {python_basedir}/ipengine --work-dir="{pwd}" --timeout=30
+srun {python_basedir}/ipengine --work-dir="{pwd}" --cluster-id='{uuid}' --timeout=30
 """
 env['user'] = getpass.getuser()
 env['uuid'] = str(uuid.uuid4())[:8]
@@ -36,7 +37,7 @@ def kill_cluster():
         launching_env = json.loads(fh.read())
 
     with settings(warn_only=True):        
-        run('{python_basedir}/python -c "from IPython.parallel import Client; Client()[:].shutdown(hub=True)"'.format(**launching_env))
+        run('{python_basedir}/python -c "from IPython.parallel import Client; Client(cluster_id=\'{uuid}\')[:].shutdown(hub=True)"'.format(**launching_env))
         run('tmux kill-session -t {tmux_session}'.format(**launching_env))
 
         # Failsafe,  just in case we killed the hub and can't reach the engines anymore
@@ -47,7 +48,7 @@ def kill_cluster():
 @task
 def launch_controller():
     env['pwd'] = os.getcwd()
-    env['cmd'] = "{python_basedir}/ipcontroller --ip='*' --work-dir='{pwd}'".format(**env)
+    env['cmd'] = "{python_basedir}/ipcontroller --ip='*' --work-dir='{pwd}' --cluster-id='{uuid}'".format(**env)
     
     with cd(env['pwd']):
         result = run('tmux new-session -d -s '
@@ -94,6 +95,10 @@ def main():
     if args.sub_parser == "start":
         env.hosts = ['localhost']
         execute(launch_controller)
+
+        # Sleep for a hot second (this should be better)
+        time.sleep(2)
+
         execute(launch_engines, args.nodes)
     else:
         env.hosts = ['localhost']
