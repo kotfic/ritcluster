@@ -22,10 +22,10 @@ sbatch_script = \
 
 echo "" > {pwd}/engines.out
 
-srun {python_basedir}/ipengine --work-dir="{pwd}" --cluster-id='{uuid}' --timeout=30
+srun {python_basedir}/ipengine --work-dir="{pwd}" {engine_options} --timeout=30
 """
 env['user'] = getpass.getuser()
-env['uuid'] = str(uuid.uuid4())[:8]
+env['uuid'] = ''
 env['tmux_session'] = "ipcluster-{uuid}".format(**env)
 env["tmux_window"] = 'ipcontroller'
 env['python_basedir'] = '/network/rit/home/ck573381/.pyenv/versions/2.7.8/bin'
@@ -35,6 +35,7 @@ def kill_cluster():
 
     with open(".job_id", "r") as fh:
         launching_env = json.loads(fh.read())
+
 
     with settings(warn_only=True):        
         run('{python_basedir}/python -c "from IPython.parallel import Client; Client(cluster_id=\'{uuid}\')[:].shutdown(hub=True)"'.format(**launching_env))
@@ -48,7 +49,7 @@ def kill_cluster():
 @task
 def launch_controller():
     env['pwd'] = os.getcwd()
-    env['cmd'] = "{python_basedir}/ipcontroller --ip='*' --work-dir='{pwd}' --cluster-id='{uuid}'".format(**env)
+    env['cmd'] = "{python_basedir}/ipcontroller --ip='*' --work-dir='{pwd}' {controller_options}".format(**env)
     
     with cd(env['pwd']):
         result = run('tmux new-session -d -s '
@@ -84,16 +85,30 @@ def main():
     sp_start = sp.add_parser("start",
                              help="convert a document to different types")
     sp_start.add_argument("nodes",
-                        type=int,
-                        default=4,
-                        help="directories to save documents to")
+                          type=int,
+                          default=4,
+                          help="directories to save documents to")
+
+    sp_start.add_argument("--unique",
+                          action="store_true",
+                          help="directories to save documents to")
 
     sp_kill = sp.add_parser("kill",
                              help="convert a document to different types")
+
     
     args = parser.parse_args()
+
+    env['engine_options'] = ""
+    env['controller_options'] = ""
+
     if args.sub_parser == "start":
         env.hosts = ['localhost']
+        if args.unique == True:
+            env['uuid'] = str(uuid.uuid4())[:8]
+            env['engine_options'] += " --cluster-id='{uuid}'".format(**env)
+            env['controller_options'] += " --cluster-id='{uuid}'".format(**env)
+
         execute(launch_controller)
 
         # Sleep for a hot second (this should be better)
